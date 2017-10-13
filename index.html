@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ru">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+        <title>Title</title>
+
+        <link href="assets/style/style.css" rel="stylesheet">
+
+        <script src="https://vk.com/js/api/xd_connection.js?2" type="text/javascript"></script>
+    </head>
+<script>
+if(window.self == window.top) {
+    window.location = 'https://vk.com/app5671544';
+}
+</script>
+    <body>
+        <div class="section main">
+            <div class="container">
+                <div class="block">
+                    <div class="logo"></div>
+                    <div class="search">
+                        <form id="input-form" action="" method="get">
+                            <input type="url" name="url" class="url-input" placeholder="Ссылка на сообщество или пользователя" autofocus>
+                            <button type="submit" class="submit">Вперед</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="section detail hidden">
+            <div class="container">
+                <div class="block">
+                    <div class="logo">
+                        <img src="https://vk.com/images/community_200.png" alt="logo"><span class="ageLimits"></span>
+                        <div class="loading">
+                            <span class="percentage">0</span>%
+                        </div>
+                    </div>
+                    <div class="details">
+                        <div class="title"></div>
+                        <div class="followers">Подписчики: <span class="count"></span></div>
+                    </div>
+                    <div class="actions">
+                        <button class="cancel">Отмена</button>
+                        <button class="search">Поиск собак</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="section result hidden">
+            <div class="container">
+                <div class="block">
+                    <div class="logo">
+                        <img src="https://vk.com/images/community_200.png" alt="logo">
+                    </div>
+                    <div class="details">
+                        <div class="title">Название</div>
+                        <div class="followers">Подписчики: <span class="count"></span></div>
+                        <div class="deactivated">Собаки: <span class="count"></span></div>
+                        <div class="download"><a href="#">Скачать список собак</a></div>
+                    </div>
+                    <div class="actions">
+                        <button class="cancel">Готово</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+<script>
+VK.init();
+
+var interval = false;
+var offset = 0;
+var parsed = 0;
+
+var deactivatedCount = 0;
+
+var totalFollowers = 0;
+var globalObject = false;
+
+var deactivatedUsers = [];
+
+var requests = 0;
+var responses = 0;
+
+var loading = false;
+
+document.getElementById('input-form').addEventListener('submit', function(e) {
+    var url = document.querySelector('#input-form .url-input').value;
+    url = url.replace(/(\?|#)(.*)/, '');
+    url = url.replace(/(https?:\/\/)?(m.)?(www.)?(vk.com\/)?/, '');
+
+    if(url == '') {
+        e.preventDefault();
+        return;
+    }
+
+    VK.api('utils.resolveScreenName', {'screen_name': url}, function (data) {
+        if(data.response) {
+            if(data.response.type == 'user' || data.response.type == 'group' || data.response.type == 'page') {
+                getObjectDetails(data.response);
+            } else {
+                alert('Ссылка должна вести на пользователя или сообщество!')
+            }
+        } else {
+            alert('Указана неверная ссылка!');
+        }
+    });
+
+    e.preventDefault();
+});
+
+document.querySelector('.detail .cancel').addEventListener('click', function(e) {
+    document.querySelector('.main .url-input').value = '';
+
+    clearInterval(interval);
+    interval = false;
+
+    deactivatedUsers = [];
+
+    dropSettings();
+
+    segue('detail', 'main', 'slide-out');
+    e.preventDefault();
+});
+
+document.querySelector('.actions .search').addEventListener('click', function(e) {
+    this.disabled = true;
+    this.style.display = 'none';
+
+    document.querySelector('.loading').classList.add('show');
+
+    parseFollowers(globalObject);
+    e.preventDefault();
+});
+
+document.querySelector('.result .cancel').addEventListener('click', function(e) {
+    document.querySelector('.main .url-input').value = '';
+
+    deactivatedUsers = [];
+
+    segue('result', 'main', 'slide-out');
+    e.preventDefault();
+});
+
+document.querySelector('.download a').addEventListener('click', function(e) {
+    var content = '';
+    for (var i = 0; i < deactivatedUsers.length; i++) {
+        content += 'id' + deactivatedUsers[i] + '\n';
+    }
+
+    window.open("data:text/plain;charset=utf-8," + encodeURIComponent(content));
+
+    e.preventDefault();
+});
+
+function getObjectDetails(object) {
+    var callback = function(data) {
+        response = data.response[0];
+
+        if(response.is_closed || response.deactivated) {
+            alert('Данные недоступны!')
+            return;
+        }
+
+        globalObject = object;
+
+        var followers = totalFollowers = object.type == 'user' ? response.followers_count : response.members_count;
+        var title = object.type == 'user' ? response.first_name + ' ' + response.last_name : response.name;
+        var photo = object.type == 'user' ? response.photo_200 : response.photo_big;
+
+        var ageLimits = false;
+        if(response.age_limits) {
+            ageLimits = response.age_limits;
+
+            if(ageLimits == 1) {
+                ageLimits = false;
+            } else if(ageLimits == 2) {
+                ageLimits = '16+';
+            } else if(ageLimits == 3) {
+                ageLimits = '18+';
+            }
+        }
+
+        followers = followers.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+        document.querySelector('.detail .logo img').setAttribute('src', photo);
+        document.querySelector('.result .logo img').setAttribute('src', photo);
+        document.querySelector('.detail .title').innerText = title;
+        document.querySelector('.result .title').innerText = title;
+        document.querySelector('.detail .count').innerText = followers;
+        document.querySelector('.result .followers .count').innerText = followers;
+
+        if(ageLimits) {
+            document.querySelector('.detail .ageLimits').innerText = ageLimits;
+            document.querySelector('.detail .ageLimits').style.display = 'block';
+        } else {
+            document.querySelector('.detail .ageLimits').style.display = 'none';
+        }
+        
+        segue('main', 'detail', 'slide-in');
+    }
+
+    if(object.type == 'user') {
+        VK.api('users.get', {'user_id': object.object_id, 'fields': 'followers_count,photo_200', 'https': true}, function (data) {
+            callback(data);
+        });
+    } else {
+        VK.api('groups.getById', {'group_id': object.object_id, 'fields': 'members_count,age_limits', 'https': true}, function (data) {
+            callback(data);
+        });
+    }
+}
+
+function parseFollowers(object) {
+    if(interval) {
+        clearInterval(interval);
+        interval = false;
+    }
+
+    loading = true;
+
+    getMembers(object);
+    interval = setInterval(function() {
+        getMembers(object);
+    }, 350);
+}
+
+function getMembers(object) {
+    if(offset > totalFollowers) {
+        clearInterval(interval);
+        interval = false;
+        return;
+    }
+
+    requests++;
+
+    var callback = function(data) {
+        if(!loading) {
+            return;
+        }
+
+        responses++;
+
+        var max = data.response.items.length;
+
+        for(var i = 0; i < max; i++) {
+            if (data.response.items[i].deactivated) {
+                deactivatedCount++;
+
+                deactivatedUsers.push(data.response.items[i].id);
+            }
+        }
+
+        parsed += max;
+
+        document.querySelector('.loading .percentage').innerText = Math.floor(parsed / totalFollowers * 100);
+
+        //if(parsed >= totalFollowers) {
+        //    reportFinished();
+        //}
+
+        if (offset > totalFollowers) {
+            if (responses >= requests) {
+                reportFinished();
+            }
+        }
+    }
+
+    if(object.type == 'user') {
+        var code = getExecuteCode('user', object.object_id, totalFollowers, offset);
+    } else {
+        var code = getExecuteCode('page', object.object_id, totalFollowers, offset);
+    }
+
+    VK.api('execute', {code: code}, function(data) {
+        callback(data);
+    });
+
+    offset += 25000;
+}
+
+// %26%26
+// %2B
+
+function getExecuteCode(type, group_id, totalMembers, offset) {
+    var code = 'var offset =' + offset + ';'
+    + 'var total =' + totalMembers + ';'
+    + 'var query = 0;'
+    + 'var members = [];'
+    + 'while (query < 25 && offset < total)'
+    + '{';
+    if(type == 'user') {
+        code += 'members = members + API.users.getFollowers({"user_id": "' + group_id + '", "v": "5.27", "sort": "id_asc", "count": "1000", "offset": offset, "fields": "deactivated"}).items;'
+    } else {
+        code += 'members = members + API.groups.getMembers({"group_id": "' + group_id + '", "v": "5.27", "sort": "id_asc", "count": "1000", "offset": offset, "fields": "deactivated"}).items;'
+    }
+        code += 'offset = offset + 1000;'
+        + 'query = query + 1;'
+    + '};'
+    + 'return {"items": members};';
+
+    return code;
+}
+
+function reportFinished() {
+    document.querySelector('.result .deactivated .count').innerText = deactivatedCount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' (' + Math.ceil(deactivatedCount / totalFollowers * 100) + '%)';
+
+    dropSettings();
+
+    segue('detail', 'result', 'slide-in');
+}
+
+function dropSettings() {
+    parsed = 0;
+    offset = 0;
+    loading = false;
+    globalObject = false;
+    deactivatedCount = 0;
+    totalFollowers = 0;
+    requests = 0;
+    responses = 0;
+
+    document.querySelector('.actions .search').disabled = false;
+    document.querySelector('.actions .search').style.display = 'inline';
+    document.querySelector('.loading').classList.remove('show');
+    document.querySelector('.loading .percentage').innerText = '0';
+}
+
+function segue(from, to, animation) {
+    var from = document.querySelector('.section.' + from);
+    var to = document.querySelector('.section.' + to);
+
+    var animations = {
+        'slide-in': [
+            'slide-out-to-left',
+            'slide-in-from-right'
+        ],
+        'slide-out': [
+            'slide-out-to-right',
+            'slide-in-from-left'
+        ]
+    }
+
+    from.classList.add(animations[animation][0]);
+
+    to.classList.remove('hidden');
+    to.classList.add(animations[animation][1]);
+
+    var callback = function() {
+        from.classList.add('hidden');
+
+        to.classList.remove(animations[animation][1]);
+        from.classList.remove(animations[animation][0]);
+
+        from.removeEventListener('animationend', callback);
+        from.removeEventListener('webkitAnimationEnd', callback);
+    }
+
+    from.addEventListener('animationend', callback);
+    from.addEventListener('webkitAnimationEnd', callback);
+}
+
+function jsonp(url, callback) {
+    var appendParam = function(url, key, param) {
+        return url + (url.indexOf('?') > 0 ? '&' : '?') + key + '=' + param;
+    },
+
+    createScript = function(url, callback) {
+        var doc = document,
+            head = doc.head,
+            script = doc.createElement('script');
+
+        script.setAttribute('src', url);
+
+        head.appendChild(script);
+
+        callback(function(){
+            setTimeout(function(){
+                head.removeChild(script);
+            }, 0);
+        });
+    },
+
+    q = "q" + Math.round(Math.random() * Date.now());
+
+    createScript(appendParam(url, 'callback', q), function(remove) {
+        window[q] = function(json) {
+            window[q] = undefined;
+            remove();
+            callback(json);
+        };
+    });
+}
+</script>
+</html>
